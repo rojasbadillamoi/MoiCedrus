@@ -1,0 +1,11 @@
+{
+  "Conífera (defecto)": {
+    "canal": "gray",
+    "invertir": false,
+    "suavizado": 7,
+    "prominencia": 12.0,
+    "anchura_min_px": 15,
+    "anchura_max_px": 3000,
+    "banda_px": 15
+  }
+}

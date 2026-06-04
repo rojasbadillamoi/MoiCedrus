@@ -1,0 +1,13 @@
+# DPI — Dendro Pixel Interface
+# Dependencias de ejecución
+PyQt6>=6.5
+pyqtgraph>=0.13
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+openpyxl>=3.1
+opencv-python-headless>=4.7
+Pillow
+
+# Dependencias de construcción (solo para empaquetar)
+# pip install pyinstaller

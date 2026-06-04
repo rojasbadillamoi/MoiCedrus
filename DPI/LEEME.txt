@@ -1,0 +1,421 @@
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║            PLATAFORMA DENDROCRONOLÓGICA  —  Manual de Usuario                ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+  Herramienta de escritorio para la medición de anillos de árboles,
+  co-datación visual, registro de anomalías y análisis de eventos
+  dendrocronológicos. Desarrollada en Python + PyQt6.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ARCHIVOS DEL PROGRAMA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Existen tres puntos de entrada independientes según la tarea:
+
+  ┌─────────────────────┬──────────────────────────────────────────────────┐
+  │ Archivo             │ Descripción                                      │
+  ├─────────────────────┼──────────────────────────────────────────────────┤
+  │ main.py             │ Plataforma completa (todas las pestañas juntas)  │
+  │ main_anillos.py     │ Solo medición de anillos + co-datación           │
+  │ main_eventos.py     │ Solo análisis de eventos                         │
+  └─────────────────────┴──────────────────────────────────────────────────┘
+
+  Módulos internos (no se ejecutan directamente):
+
+  ┌────────────────────────────┬─────────────────────────────────────────────┐
+  │ Módulo                     │ Contenido                                   │
+  ├────────────────────────────┼─────────────────────────────────────────────┤
+  │ modulo_medicion.py         │ Lienzo interactivo, exportador, pestaña     │
+  │                            │ de imagen completa con co-datación en vivo  │
+  │ modulo_codatacion.py       │ Panel de co-datación visual, lectura de     │
+  │                            │ archivos .rwl / .wid, motor de búsqueda     │
+  │                            │ exhaustiva de correcciones                  │
+  │ modulo_autodeteccion.py    │ Detección automática de límites de anillo   │
+  │                            │ por análisis de perfil de intensidad        │
+  │ modulo_eventos.py          │ Análisis estadístico y gráfico de datasets  │
+  │                            │ de eventos (frost rings, light rings, etc.) │
+  │ modulo_ingreso.py          │ Ingreso manual y edición de eventos         │
+  │                            │ por serie; importación de planillas Excel   │
+  │ constantes.py              │ Valores globales: DPI, tolerancias,         │
+  │                            │ colores, tipos de anomalía y más            │
+  │ estilos.py                 │ Hojas de estilo Qt para tema claro/oscuro   │
+  │ species_profiles.json      │ Perfiles de detección por especie vegetal   │
+  └────────────────────────────┴─────────────────────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DEPENDENCIAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Python 3.11+  recomendado
+
+  pip install PyQt6 pyqtgraph opencv-python pillow numpy pandas
+              scipy matplotlib openpyxl
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PESTAÑA 1 — IMÁGENES Y MEDICIÓN  (📷)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Permite cargar imágenes escaneadas de madera y marcar los límites de
+  anillo manualmente o con ayuda del detector automático.
+
+  ABRIR IMÁGENES
+  ──────────────
+  · Clic en "📁 Abrir Imagen(es)" para seleccionar una o varias imágenes.
+  · Formatos soportados: PNG, JPG, TIFF.
+  · Cada imagen se abre en su propia subpestaña, con nombre de archivo.
+  · Si la imagen tiene DPI en sus metadatos, la escala se configura
+    automáticamente. En caso contrario se asume 2400 DPI y se avisa.
+  · El progreso se guarda de forma automática en un archivo oculto
+    (.nombre_imagen.json) junto a la imagen original.
+    Al volver a abrir la imagen, se restaura el estado exacto.
+
+  BARRA DE METADATOS (parte superior)
+  ────────────────────────────────────
+  · Cód     → Código identificador de la serie (máx. 8 caracteres).
+              Se usa al exportar al formato Tucson.
+  · Dir     → Dirección de medición:
+                "Med→Cor (+1)"  desde médula hacia corteza
+                "Cor→Med (−1)"  desde corteza hacia médula
+  · Médula  → Año del anillo más interior de la serie.
+  · Corteza → Año del anillo más exterior de la serie.
+              Médula y Corteza se recalculan automáticamente
+              al agregar o quitar puntos.
+  · 🌱 Médula / 🪵 Corteza → Checkboxes que indican si la serie
+              llega físicamente al tejido (pith/bark present).
+              Se guardan en el archivo sidecar de anomalías.
+
+  HERRAMIENTAS DE MEDICIÓN
+  ─────────────────────────
+  Cada botón activa un modo; al hacer clic, el foco vuelve al lienzo
+  para que el scroll y las teclas de navegación funcionen de inmediato.
+
+  📍 Medir    [Ctrl+A]
+      · Primer clic: coloca el primer punto de la serie.
+      · Siguientes clics: añade puntos. El ancla (círculo amarillo)
+        indica desde qué punto se continuará midiendo.
+      · Clic sobre un punto existente: lo ancla sin añadir nada nuevo,
+        permitiendo continuar o intercalar desde ese punto.
+
+  🔀 Salto    [Ctrl+D]
+      · Añade un punto marcado como discontinuidad (línea amarilla).
+      · Útil para secciones con resina, grietas o zonas no medibles.
+      · Tras el salto, vuelve automáticamente al modo Medir.
+
+  ➕ Insertar  [Ctrl+W]
+      · Clic sobre un segmento existente para insertar un punto
+        intermedio sin alterar los demás.
+
+  🖐 Mover    [Ctrl+S]
+      · Arrastra un punto existente para reposicionarlo.
+      · Clic en zona vacía y arrastrar: paneo de la imagen.
+
+  ✂️ Borrar   [Ctrl+X]
+      · Clic sobre un punto para eliminarlo.
+
+  ⏪ Deshacer  [Ctrl+Z]
+      · Deshace el último cambio. Historial de 50 pasos.
+
+  🔴 Anomalías  [Ctrl+Q]
+      · Seleccionar el tipo en el combo desplegable y hacer clic
+        sobre el tick del anillo afectado para marcarlo.
+      · Clic sobre un anillo ya marcado con el mismo tipo: lo quita.
+      · Las anomalías disponibles son:
+
+          ❄  Frost ring     — anillo de helada
+          ☀  Light ring     — anillo claro (latewood reducido)
+          🔥 Fuego          — evento de incendio
+          ▼  Comp. madera   — madera de compresión
+          ▲  Tensión        — madera de tensión
+          ⊘  Falso anillo   — anillo falso (intraanual)
+          ◆  Cuña           — anillo en cuña
+          ●  Resina          — conducto resinífero traumático
+          ★  Otro/Genérico  — cualquier otro evento de interés
+
+      · Las anomalías se guardan en un archivo sidecar
+        (.rwl.anom.json) junto al archivo exportado.
+
+  CALIBRACIÓN DE ESCALA
+  ──────────────────────
+  · 📐 DPI Manual  → Ingresar el DPI exacto del escáner (ej. 1200, 2400).
+  · 📏 Regla       → Clic en dos puntos de referencia conocidos;
+                     ingresar la distancia real en mm para calibrar.
+
+  AUTO-DETECCIÓN DE ANILLOS  (🔍 Auto-detectar)
+  ───────────────────────────────────────────────
+  Detecta los límites de anillo automáticamente analizando el perfil
+  de intensidad a lo largo de un segmento trazado por el usuario.
+
+  Flujo de trabajo:
+  1. Seleccionar la especie en el combo "🌿".
+  2. Hacer clic en "🔍 Auto-detectar".
+  3. Clic 1: sobre un punto existente (ancla) o en la médula.
+  4. Clic 2: en la corteza o extremo del segmento a detectar.
+  5. Se muestra un diálogo de previsualización con el perfil de
+     intensidad. Ajustar la prominencia con el deslizador hasta
+     obtener el número esperado de anillos.
+  6. Aceptar: los puntos se insertan automáticamente.
+  7. Corregir con las herramientas manuales.
+
+  Gestión de perfiles de especie:
+  · ⚙  Configurar parámetros del perfil activo (canal, suavizado,
+       prominencia, anchos mín/máx, banda de muestreo).
+  · ＋  Crear un nuevo perfil para otra especie.
+  · Los perfiles se guardan en species_profiles.json.
+
+  RADIOS GUARDADOS
+  ────────────────
+  · "✅ Terminar Radio" → Guarda el camino activo con un nombre y
+    comienza uno nuevo para el mismo árbol (ej. radio A y radio B).
+  · "✏️ Editar Radio"   → Carga un radio guardado para modificarlo.
+  · "🗑️ Eliminar"       → Borra el radio seleccionado definitivamente.
+  · El checkbox junto a cada radio controla su visibilidad en el
+    lienzo (los radios inactivos se muestran en verde).
+
+  IMPORTACIÓN DE ARCHIVOS .POS (CooRecorder)
+  ────────────────────────────────────────────
+  · "📥 Imp .pos" → Importa coordenadas de medición desde CooRecorder.
+  · Detecta DPI, año de datación (#C DATED) y saltos automáticamente.
+  · La dirección se fuerza a Médula→Corteza tras la importación.
+
+  EXPORTACIÓN
+  ───────────
+  · "💾 Exp" → Exportar el radio activo o cualquier radio guardado.
+  · Formatos disponibles:
+      - Tucson / ITRDB (.rwl, .txt)  — estándar dendrocronológico
+      - Excel (.xlsx)
+      - CSV (.csv)
+  · Al exportar en formato Tucson, se guarda automáticamente un
+    archivo .anom.json junto al .rwl con las anomalías marcadas
+    y los metadatos de médula/corteza.
+
+  NAVEGACIÓN EN EL LIENZO
+  ────────────────────────
+  · Scroll del ratón          → Zoom in/out centrado en el cursor.
+  · Modo Mover + arrastrar    → Paneo de la imagen.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PESTAÑA 2 — CO-DATACIÓN VISUAL  (📊)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Herramienta de cofechado que compara series de ancho de anillo y
+  detecta posibles anillos faltantes o sobrantes.
+
+  CARGAR SERIES
+  ─────────────
+  · "📂 Cargar .rwl" → Carga uno o varios archivos en formato Tucson.
+  · Las series aparecen en la lista izquierda con su rango de años.
+  · Checkbox junto a cada serie: activa/desactiva su visualización.
+
+  PANEL PRINCIPAL — GRÁFICO DE SERIES
+  ─────────────────────────────────────
+  · Muestra las series cargadas normalizadas (z-score de diff-log).
+  · La serie activa (seleccionada) se destaca visualmente.
+  · Ventana deslizante configurable (defecto: 40 años).
+  · Correlación de Pearson móvil en el panel inferior:
+      - Verde  (r ≥ 0.40) → segmento bien cofechado
+      - Naranja (0.00–0.40) → cofechado dudoso
+      - Rojo   (r < 0.00)  → posible error de datación
+
+  ANÁLISIS DE OFFSET  (buscar anillos faltantes/sobrantes)
+  ──────────────────────────────────────────────────────────
+  · Seleccionar una serie activa y hacer clic en "Analizar offset".
+  · El motor prueba todos los desplazamientos ±N años para cada
+    segmento de la serie activa frente a las demás.
+  · La tabla de sugerencias muestra:
+      - Año del posible error
+      - Delta sugerido (+N insertar / −N eliminar anillos)
+      - Mejora de correlación esperada
+  · Clic en una sugerencia → aplica la corrección en memoria
+    (no modifica el archivo original).
+
+  SIMULADOR
+  ──────────
+  · "Simular insertar" / "Simular borrar" → aplica manualmente
+    un desplazamiento en la serie activa para evaluar su efecto.
+  · "Restaurar serie" → deshace todas las correcciones y vuelve
+    al estado original cargado desde el archivo.
+
+  EXPORTAR SERIE COFECHADA
+  ────────────────────────
+  · "Exportar serie cofechada" → guarda la serie activa (con todas
+    las correcciones aplicadas en memoria) en formato Tucson .rwl.
+
+  CO-DATACIÓN EN VIVO (dentro de la pestaña de imagen)
+  ──────────────────────────────────────────────────────
+  · En la pestaña de imagen, el panel inferior muestra un gráfico
+    en tiempo real que actualiza con cada punto medido.
+  · "📂 .rwl / .txt" → carga una serie de referencia Tucson.
+  · "📂 .wid"        → carga una cronología CooRecorder.
+  · Con más de una serie, el eje Y pasa a z-score automáticamente.
+  · La etiqueta de correlación (r = ...) se colorea según umbral.
+  · Clic en la leyenda → oculta/muestra una serie individual.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PESTAÑA 3 — EVENTOS  (🔴)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Análisis estadístico y gráfico de colecciones de eventos
+  dendrocronológicos (frost rings, fire scars, etc.).
+
+  CARGAR DATOS
+  ─────────────
+  · "📂 Cargar .rwl + sidecars"
+      Seleccionar uno o varios archivos .rwl; el programa busca
+      automáticamente el .anom.json correspondiente a cada uno.
+  · "📂 Cargar planilla .xlsx"
+      Importa un Excel con el formato de exportación propio del
+      programa. Las hojas se mapean a tipos de anomalía.
+
+  TABLA DE SERIES
+  ───────────────
+  · Muestra código, rango (inicio–fin), presencia de médula y
+    corteza, y número de eventos por tipo.
+  · Clic en la celda de médula/corteza para ciclar entre ✔ / ✗ / ?.
+  · Doble clic en el código para editar el nombre de la serie.
+
+  SUB-PESTAÑAS DE ANÁLISIS
+  ─────────────────────────
+  · N° Eventos   → Barras de número absoluto de eventos por año,
+                   con curva de N series activas en eje derecho.
+  · % Series     → Porcentaje de series que registran el evento
+                   (excluye años con cobertura al 100%).
+                   En ambos modos, los 8 años con mayor señal
+                   se anotan automáticamente sobre las barras.
+  · Series       → Vista gráfica de líneas de series: cada fila
+                   es una serie, las marcas rojas son los eventos.
+                   Panel superior con histograma de eventos.
+  · Weibull      → Estimación de la distribución Weibull del
+                   tiempo entre eventos (requiere scipy).
+                   Incluye tabla de percentiles y gráfico Q-Q.
+
+  FILTRO DE TIPO
+  ───────────────
+  · Combo superior → selecciona el tipo de anomalía a visualizar.
+  · Los gráficos se actualizan instantáneamente.
+
+  GUARDAR GRÁFICO
+  ────────────────
+  · "💾 Guardar gráfico" → exporta el gráfico activo en PNG
+    (con selección de resolución) o PDF/SVG vectorial.
+
+  EXPORTAR DATOS
+  ───────────────
+  · "💾 Exportar XLSX" → guarda todas las matrices (una hoja por
+    tipo de anomalía + hoja _meta oculta con médula/corteza).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PESTAÑA 4 — INGRESO  (✏️)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Permite construir o completar un dataset de eventos manualmente,
+  sin necesidad de archivos de imagen.
+
+  GESTIÓN DE SERIES
+  ─────────────────
+  · "＋ Nueva serie" → Diálogo para ingresar código, rango de años,
+    tipo de evento y si llega a médula/corteza.
+  · "🗑 Eliminar"   → Borra la serie seleccionada del modelo.
+  · "📥 Importar .rwl + sidecar" → Lee el archivo Tucson y carga
+    las anomalías del sidecar .anom.json asociado.
+  · "📥 Importar planilla .xlsx" → Importa desde el formato propio.
+    Si una serie ya existe con el mismo código, ofrece:
+      · Fusionar (combinar eventos de ambas fuentes)
+      · Renombrar (agregar con un nombre diferente)
+      · Saltar (ignorar la serie entrante)
+
+  INGRESO DE EVENTOS
+  ───────────────────
+  · Seleccionar una serie en la lista y un tipo de evento en el combo.
+  · El campo de año + botón "Agregar" (o tecla Enter) marca ese año.
+  · Clic sobre un año ya marcado en la lista: lo quita (toggle).
+  · La tabla muestra la matriz completa: filas = años, columnas = series.
+    Valores: 1 = evento, 0 = sin evento, vacío = fuera del rango.
+
+  EXPORTAR
+  ─────────
+  · "💾 Exportar XLSX"     → Planilla en el formato estándar del programa.
+  · "💾 Exportar sidecars" → Genera un .anom.json por serie, compatible
+    con el módulo de eventos para análisis posterior.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FORMATOS DE ARCHIVO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  .rwl / .txt   Formato Tucson estándar (ITRDB). Décimas de mm, 10 valores
+                por línea, marcador -9999 al final de cada serie.
+
+  .wid          Formato CooRecorder. Un valor de mm por línea (coma decimal),
+                con cabecera #C DATED <año_corteza>.
+
+  .pos          Archivo de posiciones CooRecorder. Contiene coordenadas X,Y
+                en mm y el año de datación en la cabecera.
+
+  .anom.json    Sidecar de anomalías (generado automáticamente al exportar).
+                Almacena: código de serie, presencia de médula/corteza, y
+                un diccionario {año: tipo_anomalía}.
+
+  .json (oculto) Guardado automático de progreso por imagen. Se crea en el
+                 mismo directorio que la imagen con el nombre
+                 ".nombre_imagen.json". No eliminarlo si se desea
+                 recuperar el trabajo.
+
+  species_profiles.json
+                Perfiles de detección automática por especie. Se puede editar
+                manualmente o desde la interfaz (⚙ Configurar especie).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATAJOS DE TECLADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Ctrl+A   →  Modo Medir
+  Ctrl+D   →  Modo Salto
+  Ctrl+W   →  Modo Insertar
+  Ctrl+S   →  Modo Mover
+  Ctrl+X   →  Modo Borrar
+  Ctrl+Q   →  Modo Anomalías
+  Ctrl+Z   →  Deshacer
+  Delete   →  Eliminar radio seleccionado en la lista
+  Scroll   →  Zoom in/out en la imagen
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEMA VISUAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  · Botón 🌓 (esquina superior derecha) → alterna entre tema
+    oscuro y claro en cualquier momento.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FLUJO DE TRABAJO TÍPICO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Abrir imagen escaneada (📁).
+  2. Verificar o ajustar la escala (DPI o regla).
+  3. Ingresar código de serie, año de médula y dirección.
+  4. Medir los anillos con 📍 Medir, o usar 🔍 Auto-detectar
+     y corregir con las herramientas manuales.
+  5. Marcar anomalías con 🔴 Anomalías si corresponde.
+  6. Cargar una serie de referencia (.rwl o .wid) en el panel
+     inferior para co-datación en vivo.
+  7. Ajustar años de médula/corteza hasta que la correlación
+     sea satisfactoria (r ≥ 0.40 en verde).
+  8. "✅ Terminar Radio" si hay más de un radio por muestra.
+  9. "💾 Exp" para exportar en formato Tucson.
+  10. Con varios archivos cofechados, usar la pestaña 📊
+      Co-datación Visual para verificación cruzada.
+  11. Usar la pestaña 🔴 Eventos para análisis poblacional
+      de las anomalías registradas.
+
+══════════════════════════════════════════════════════════════════════════════
