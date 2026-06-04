@@ -14,6 +14,7 @@ authors:
     orcid: "https://orcid.org/0000-0002-1101-2280"
 version: "1.0.0"
 date-released: "2026-06-03"
+doi: 10.5281/zenodo.20534980
 repository-code: "https://github.com/rojasbadillamoi/MoiCedrus"
 url: "https://github.com/rojasbadillamoi/MoiCedrus/tree/main/DPI"
 license: GPL-3.0
