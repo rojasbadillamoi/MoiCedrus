@@ -10,7 +10,7 @@ abstract: >
   dendrocronología (Tucson .rwl). Forma parte de la suite MoiCedrus.
 authors:
   - family-names: "Rojas Badilla"
-    given-names: "Moisés E."
+    given-names: "Moisés"
     orcid: "https://orcid.org/0000-0002-1101-2280"
 version: "1.0.0"
 date-released: "2026-06-03"
