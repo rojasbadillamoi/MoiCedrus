@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "Si usas este software en una publicación, por favor cítalo así:"
+title: "Dendro Pixel Interface (DPI)"
+abstract: >
+  Software de código abierto para la medición y co-fechado de anillos
+  de árboles a partir de imágenes escaneadas de alta resolución.
+  Permite identificar, medir y datar anillos anuales de crecimiento,
+  detectar errores de medición mediante correlación con series de
+  referencia, y exportar los resultados en formatos estándar de
+  dendrocronología (Tucson .rwl). Forma parte de la suite MoiCedrus.
+authors:
+  - family-names: "Rojas Badilla"
+    given-names: "Moisés E."
+    orcid: "https://orcid.org/0000-0002-1101-2280"
+version: "1.0.0"
+date-released: "2026-06-03"
+repository-code: "https://github.com/rojasbadillamoi/MoiCedrus"
+url: "https://github.com/rojasbadillamoi/MoiCedrus/tree/main/DPI"
+license: GPL-3.0
+keywords:
+  - dendrochronology
+  - dendrocronología
+  - tree-rings
+  - anillos-de-árboles
+  - cross-dating
+  - co-fechado
+  - image-analysis
+  - análisis-de-imágenes
+  - tree-ring-measurement
+  - medición-de-anillos
+  - paleoclimatology
+  - paleoclimatología
