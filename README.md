@@ -1,2 +1,2 @@
-# Moiscedrus-suite
+# Moiscedrus
 Suite de programas Python para dendrocronología

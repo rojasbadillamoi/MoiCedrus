@@ -278,7 +278,17 @@ def calcular_eps_rbar_movil(series_dict, nombres, window=15, paso=1, progreso=No
 
         if rs:
             rbar = float(np.mean(rs))
-            eps = (n_series * rbar) / (1 + (n_series - 1) * rbar)
+            # Profundidad de muestreo PROMEDIO en la ventana: número medio
+            # de series con dato válido por año. ARSTAN usa esto (su columna
+            # "cores") en la fórmula de EPS, NO el total de series. Usar el
+            # total sobreestimaría el EPS en ventanas donde no todas las
+            # series están presentes. Esto es clave para que el EPS coincida
+            # con ARSTAN.
+            sample_depth = (~np.isnan(win)).sum(axis=1)
+            n_eff = float(sample_depth[sample_depth > 0].mean()) \
+                if (sample_depth > 0).any() else float(n_series)
+            # Fórmula de Wigley et al. (1984): EPS = N·r̄ / (1 + (N−1)·r̄)
+            eps = (n_eff * rbar) / (1 + (n_eff - 1) * rbar)
             resultados.append((years[i], rbar, float(eps)))
 
         if progreso is not None and total > 0 and (k % 10 == 0 or k == total - 1):
@@ -969,6 +979,42 @@ def _construir_cronologia_desde_series(
     )
     cron = cron.dropna(subset=[col_name]).sort_index()
 
+    # ── Rbar y EPS de PERÍODO COMPLETO sobre SERIES DETRENDADAS ──────
+    # Antes calcular_rbar usaba las series RAW (Ancho_mm), lo que daba
+    # valores inflados porque las tendencias decadales hacen que las
+    # series brutas covaríen fuertemente a largo plazo. ARSTAN computa
+    # su "all possible series rbar" sobre las series DETRENDADAS, que
+    # es lo correcto: queremos la señal común año-a-año, no las
+    # tendencias compartidas. Acá usamos el `df` de series detrendadas
+    # que ya construimos arriba.
+    rs_pairs = []
+    cols = list(df.columns)
+    for i in range(len(cols)):
+        si = df[cols[i]].dropna()
+        for j in range(i + 1, len(cols)):
+            sj = df[cols[j]].dropna()
+            common = si.index.intersection(sj.index)
+            if len(common) < 10:
+                continue
+            a = si.loc[common].to_numpy(dtype=float)
+            b = sj.loc[common].to_numpy(dtype=float)
+            if np.std(a) == 0 or np.std(b) == 0:
+                continue
+            r = float(np.corrcoef(a, b)[0, 1])
+            if np.isfinite(r):
+                rs_pairs.append(r)
+    rbar_completo = float(np.mean(rs_pairs)) if rs_pairs else float("nan")
+    # Profundidad de muestreo promedio (mean number of series per year
+    # with valid data) — igual que la columna "cores" de ARSTAN.
+    sample_depth_mean = float(ns[ns > 0].mean()) if (ns > 0).any() else 0.0
+    if np.isfinite(rbar_completo) and sample_depth_mean > 1:
+        eps_completo = float(
+            (sample_depth_mean * rbar_completo) /
+            (1 + (sample_depth_mean - 1) * rbar_completo)
+        )
+    else:
+        eps_completo = float("nan")
+
     meta = {
         "nombre": "",
         "tipo_cronologia": tipo,
@@ -979,6 +1025,11 @@ def _construir_cronologia_desde_series(
         "n_anios": int(len(cron)),
         "creado_en": pd.Timestamp.utcnow().isoformat(),
         "columna_valor": col_name,
+        # Rbar/EPS sobre series detrendadas (comparable con ARSTAN
+        # "all possible series rbar")
+        "Rbar": rbar_completo,
+        "EPS": eps_completo,
+        "sample_depth_mean": sample_depth_mean,
     }
     return cron, meta
 
@@ -2949,14 +3000,10 @@ class PanelCodatacion(QWidget):
         nombre = f"{nombre_base}_auto"
         meta["nombre"] = nombre
 
-        # Rbar y EPS estáticos
-        progreso.setLabelText("Calculando Rbar y EPS globales...")
-        progreso.setValue(40)
-        QApplication.processEvents()
-        rbar = calcular_rbar(series, nombres)
-        eps_val = calcular_eps(rbar, len(nombres))
-        meta["Rbar"] = rbar
-        meta["EPS"] = eps_val
+        # Rbar y EPS ya vienen calculados desde dentro de
+        # _construir_cronologia_desde_series sobre las series DETRENDADAS
+        # (comparable con ARSTAN "all possible series rbar"). Antes acá
+        # se sobrescribían usando series raw, lo que inflaba el Rbar.
         progreso.setValue(50)
         QApplication.processEvents()
 
@@ -4582,7 +4629,9 @@ class VentanaCronologia(QDialog):
         # "raw" se quitó porque no aplica estandarización: tipo="standard" con
         # metodo="raw" devuelve exactamente lo mismo que tipo="raw". Para
         # cronología sin detrending, usar tipo="raw" directamente.
-        self.combo_metodo.addItems(["spline", "negexp", "linear", "media_movil", "mean"])
+        # "media" se muestra en español; _ajustar_curva acepta tanto "media"
+        # como "mean", así que el texto visible puede ir en español.
+        self.combo_metodo.addItems(["spline", "negexp", "linear", "media_movil", "media"])
         self.combo_metodo.setCurrentText("spline")
         self.combo_metodo.currentTextChanged.connect(self._on_metodo_estandar_cambiado)
 
@@ -4611,19 +4660,78 @@ class VentanaCronologia(QDialog):
         form.addRow("Estandarización:", contenedor_metodo)
 
         self.combo_agreg = QComboBox()
-        self.combo_agreg.addItems(["biweight", "mean", "median"])
-        self.combo_agreg.setCurrentText("biweight")
+        # Texto en español visible para el usuario, pero el VALOR interno
+        # (userData) se mantiene en inglés para no romper la lógica de
+        # construcción de la cronología. Se lee con currentData().
+        self.combo_agreg.addItem("Biponderada (biweight)", "biweight")
+        self.combo_agreg.addItem("Media", "mean")
+        self.combo_agreg.addItem("Mediana", "median")
+        self.combo_agreg.setCurrentIndex(0)  # biponderada por defecto
+        self.combo_agreg.setToolTip(
+            "Cómo se combinan las series individuales en UNA cronología media:\n\n"
+            "• Biponderada (biweight): media robusta de Tukey. Baja el peso\n"
+            "  de valores atípicos progresivamente. Es el estándar en\n"
+            "  dendrocronología (lo que usa ARSTAN por defecto).\n"
+            "• Media: media aritmética simple. Sensible a valores atípicos.\n"
+            "• Mediana: el valor central. Robusta pero descarta magnitud."
+        )
         form.addRow("Agregación:", self.combo_agreg)
 
+        # Etiqueta de solape con descripción al pasar el mouse
+        lbl_overlap = QLabel("Solape mínimo:")
+        lbl_overlap.setToolTip(
+            "Cantidad mínima de años en común que dos series deben tener\n"
+            "para calcular la correlación entre ellas.\n\n"
+            "Valores chicos (5–10) → incluye más pares pero correlaciones\n"
+            "menos confiables. Valores grandes (30+) → solo pares con\n"
+            "buen solape, más confiable pero descarta series cortas."
+        )
         self.spin_min_overlap = SpinBoxFlechas()
         self.spin_min_overlap.setRange(2, 500)
         self.spin_min_overlap.setValue(10)
-        form.addRow("Overlap mínimo:", self.spin_min_overlap)
+        self.spin_min_overlap.setToolTip(lbl_overlap.toolTip())
+        form.addRow(lbl_overlap, self.spin_min_overlap)
 
         self.spin_shift = SpinBoxFlechas()
         self.spin_shift.setRange(0, 10)
         self.spin_shift.setValue(5)
         form.addRow("Desfase auto máx.:", self.spin_shift)
+
+        # ── Ventana móvil para Rbar / EPS ─────────────────────────────
+        # Permite reproducir el formato de ARSTAN (ventana de 50 años con
+        # paso de 25) para comparar y reportar en publicaciones. Con
+        # ventana chica (15) y paso 1 se obtiene la curva año a año suave.
+        lbl_ventana_eps = QLabel("Ventana Rbar/EPS:")
+        lbl_ventana_eps.setToolTip(
+            "Tamaño de la ventana móvil (en años) para calcular Rbar y EPS.\n\n"
+            "• 50 años → formato estándar de ARSTAN (recomendado para\n"
+            "  comparar y para publicaciones).\n"
+            "• 15 años o menos → curva más detallada año a año, útil para\n"
+            "  ver la evolución fina de la señal común.\n\n"
+            "Ventanas grandes promedian más datos y dan valores más estables."
+        )
+        self.spin_ventana_eps = SpinBoxFlechas()
+        self.spin_ventana_eps.setRange(10, 200)
+        self.spin_ventana_eps.setValue(50)
+        self.spin_ventana_eps.setSingleStep(5)
+        self.spin_ventana_eps.setSuffix(" años")
+        self.spin_ventana_eps.setToolTip(lbl_ventana_eps.toolTip())
+        form.addRow(lbl_ventana_eps, self.spin_ventana_eps)
+
+        lbl_paso_eps = QLabel("Paso Rbar/EPS:")
+        lbl_paso_eps.setToolTip(
+            "Cada cuántos años se desliza la ventana móvil.\n\n"
+            "• 25 años → formato estándar de ARSTAN (la ventana se mueve\n"
+            "  en saltos de 25 años, generando pocos valores espaciados).\n"
+            "• 1 año → un valor por cada año (curva continua y suave).\n\n"
+            "Para reproducir ARSTAN usa ventana 50 y paso 25."
+        )
+        self.spin_paso_eps = SpinBoxFlechas()
+        self.spin_paso_eps.setRange(1, 100)
+        self.spin_paso_eps.setValue(25)
+        self.spin_paso_eps.setSuffix(" años")
+        self.spin_paso_eps.setToolTip(lbl_paso_eps.toolTip())
+        form.addRow(lbl_paso_eps, self.spin_paso_eps)
 
         self.input_nombre = QLineEdit()
         self.input_nombre.setPlaceholderText("Nombre de cronología")
@@ -4790,7 +4898,9 @@ class VentanaCronologia(QDialog):
 
         tipo_sel = self.combo_tipo.currentText()
         metodo = self.combo_metodo.currentText()
-        agreg = self.combo_agreg.currentText()
+        # currentData() devuelve el valor interno en inglés (biweight/mean/
+        # median) aunque el texto visible esté en español.
+        agreg = self.combo_agreg.currentData() or "biweight"
         nombre_base = self.input_nombre.text().strip() or "Cronologia"
 
         tipos = ["raw", "standard", "residual"] if tipo_sel == "Todas" else [tipo_sel]
@@ -4822,10 +4932,12 @@ class VentanaCronologia(QDialog):
                 nombre = f"{nombre_base}_{tipo}" if len(tipos) > 1 else nombre_base
                 meta["nombre"] = nombre
 
-                rbar = calcular_rbar(self._series_cronologia, nombres)
-                eps_val = calcular_eps(rbar, len(nombres))
-                meta["Rbar"] = rbar
-                meta["EPS"] = eps_val
+                # Rbar y EPS ahora vienen calculados desde dentro de
+                # _construir_cronologia_desde_series sobre las series
+                # DETRENDADAS (comparable con ARSTAN). Antes acá se
+                # sobrescribían usando series raw, lo que inflaba el Rbar
+                # porque las tendencias decadales hacen covariar las
+                # series brutas a largo plazo.
 
                 resultados[tipo] = (df, meta)
             except Exception as exc:
@@ -4846,14 +4958,14 @@ class VentanaCronologia(QDialog):
             progreso.setValue(50 + int(pct * 0.45))
             QApplication.processEvents()
 
-        # Determinar paso para muestreo: hasta 200 puntos en el eje x
-        _, primer_meta = next(iter(resultados.values()))
-        n_anios = primer_meta.get("n_anios", 100)
-        paso = max(1, n_anios // 200)
+        # Determinar paso para muestreo. El usuario configura ventana y paso
+        # en la UI (default 50/25 estilo ARSTAN para comparación directa).
+        ventana_eps = self.spin_ventana_eps.value()
+        paso_eps = self.spin_paso_eps.value()
 
         eps_df = calcular_eps_rbar_movil(
-            self._series_cronologia, nombres, window=15,
-            paso=paso, progreso=_cb_progreso,
+            self._series_cronologia, nombres, window=ventana_eps,
+            paso=paso_eps, progreso=_cb_progreso,
         )
         self.eps_movil = eps_df
 
